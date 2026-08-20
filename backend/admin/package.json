@@ -16,8 +16,8 @@
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3",
     "@aws-sdk/client-bedrock-runtime": "^3",
-    "@aws-sdk/client-sns": "^3",
-    "@aws-sdk/client-ssm": "^3",
+    "@aws-sdk/client-sns": "^3.1114.0",
+    "@aws-sdk/client-ssm": "^3.1114.0",
     "@wren/auth": "*",
     "@wren/db-node": "*",
     "@wren/notification": "*",
