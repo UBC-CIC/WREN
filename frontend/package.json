@@ -21,7 +21,7 @@
     "@radix-ui/react-popover": "^1.1.23",
     "@sereneinserenade/tiptap-comment-extension": "0.2.0",
     "@tanstack/react-query": "^5.62.7",
-    "@tiptap/core": "3.27.1",
+    "@tiptap/core": "3.30.4",
     "@tiptap/extension-highlight": "^3.27.1",
     "@tiptap/extension-image": "^3.27.1",
     "@tiptap/extension-table": "3.27.1",
