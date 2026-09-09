@@ -2,7 +2,9 @@
 
 This guide covers how to get started with **WREN** — from creating your account to using it as a **Student**, **Department Admin**, or **System Admin**. Start with [Part 1: Getting Started](#part-1-getting-started-all-users), then jump to the part that matches your role.
 
-**Names you will see:** **WREN** is the product name in the app. In the repository and AWS, the project prefix is **WREN**. The System Admin screens correspond to the `TechnicalAdmin` role in the API and database.
+Throughout the user guide, there are different names to refer to the product. The name **WREN** represents the product's broader application, while the Literary Expression Organization & Navigation **(LEON)** name indicates the product's origins in providing writing feedback in a legal context. **Both names refer to the same product, but within different contexts**. 
+
+Similarly, you will see **System Admin** used throughout this user guide, but in the API and database, this role is called the **Technical Admin**.
 
 ## Table of Contents
 
@@ -43,7 +45,7 @@ This guide covers how to get started with **WREN** — from creating your accoun
 1. Open the WREN URL your administrator gave you (or the AWS Amplify URL).
 2. Enter the email address and password you used when creating your account.
 3. Click **Login**.
-4. You land on the dashboard for your current account view.
+4. You land on the dashboard.
 
 ### 1.2 Create an Account (First-Time Users Only)
 
@@ -63,18 +65,6 @@ This guide covers how to get started with **WREN** — from creating your accoun
 4. Find the code in your inbox (check spam if it does not arrive within a few minutes).
 5. Return to the sign-up page and enter the code.
 6. Your account is ready. Continue to [1.1 Log In](#11-log-in).
-
-### 1.3 Choosing Your Account View
-
-Open your profile and select your account view. That choice sets which dashboard you see:
-
-- **Student** — drafts, AI Debrief, and Ask WREN. See [Part 2](#part-2-student-guide).
-- **Department Admin** — document types, evaluation rubrics, and type-level analytics. See [Part 3](#part-3-department-admin-guide).
-- **System Admin** — model, usage limits, departments, users, department prompts, and department analytics. See [Part 4](#part-4-system-admin-guide).
-
-You can switch views from your profile at any time if your account holds more than one role.
-
----
 
 ## Part 2: Student Guide
 
