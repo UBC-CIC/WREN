@@ -5,6 +5,7 @@ import { Stack, type StackProps, CfnOutput } from "aws-cdk-lib";
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import type { Construct } from "constructs";
 
 import type { AppConfig } from "../config";
@@ -52,6 +53,8 @@ export interface ApiStackProps extends StackProps {
 export class ApiStack extends Stack {
   public readonly api: apigateway.SpecRestApi;
   public readonly apiEndpoint: string;
+  public readonly webAcl: wafv2.CfnWebACL;
+  
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
@@ -236,6 +239,66 @@ export class ApiStack extends Stack {
         },
       },
       cloudWatchRole: true,
+    });
+
+    // WAF protection layer for the API Gateway REST API.
+    // The Web ACL filters requests before API Gateway authorization and Lambda
+    // integration. The API Gateway stage is the protected resource.
+    this.webAcl = new wafv2.CfnWebACL(this, "ApiWebAcl", {
+      name: `${config.stackPrefix}-api-webacl`,
+      scope: "REGIONAL",
+      defaultAction: {
+        allow: {},
+      },
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: `${config.stackPrefix}-api-webacl`,
+        sampledRequestsEnabled: true,
+      },
+      rules: [
+        {
+          name: "AWSManagedRulesCommonRuleSet",
+          priority: 1,
+          overrideAction: {
+            none: {},
+          },
+          statement: {
+            managedRuleGroupStatement: {
+              vendorName: "AWS",
+              name: "AWSManagedRulesCommonRuleSet",
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: "AWSManagedRulesCommonRuleSet",
+            sampledRequestsEnabled: true,
+          },
+        },
+        {
+          name: "ApiRateLimit",
+          priority: 2,
+          action: {
+            block: {},
+          },
+          statement: {
+            rateBasedStatement: {
+              limit: 2000,
+              evaluationWindowSec: 300,
+              aggregateKeyType: "IP",
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `${config.stackPrefix}-api-rate-limit`,
+            sampledRequestsEnabled: true,
+          },
+        },
+      ],
+    });
+
+    new wafv2.CfnWebACLAssociation(this, "ApiWebAclAssociation", {
+      resourceArn: `arn:aws:apigateway:${this.region}::/restapis/${this.api.restApiId}/stages/${config.environmentName}`,
+      webAclArn: this.webAcl.attrArn,
     });
 
     // CORS on Gateway-generated errors. DEFAULT_4XX / DEFAULT_5XX do NOT cover
