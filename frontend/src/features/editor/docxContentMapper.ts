@@ -1080,8 +1080,8 @@ export async function tiptapContentToDocxBytes(
     sections: [{ children: children.length > 0 ? children : [new Paragraph({})] }],
   });
 
-  const buffer = await Packer.toBuffer(document);
-  return buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const arrayBuffer = await Packer.toArrayBuffer(document);
+  return new Uint8Array(arrayBuffer); 
 }
 
 /**
