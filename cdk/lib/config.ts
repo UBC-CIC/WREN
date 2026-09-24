@@ -45,7 +45,7 @@ export const DEFAULT_ENVIRONMENT_NAME = "dev";
  * finding f-2404a7b6). Self-registration is restricted to the institution's
  * domain out of the box rather than being unrestricted. Matching is exact:
  * subdomains (e.g. `law.ubc.ca`) are NOT implied and must be listed
- * explicitly. Override at synth/deploy with
+ * explicitly. Override at deploy with
  * `-c allowedEmailDomains=ubc.ca,law.ubc.ca`.
  */
 export const DEFAULT_ALLOWED_EMAIL_DOMAINS: readonly string[] = ["ubc.ca"];
