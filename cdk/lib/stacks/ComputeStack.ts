@@ -144,9 +144,12 @@ export class ComputeStack extends Stack {
     };
 
     // One-way salt for activity-log actor pseudonyms. Generated into Secrets
-    // Manager (never a guessable path). CloudFormation injects the value into
-    // Lambda env via a dynamic reference — activityLogService reads
-    // WREN_ACTIVITY_PSEUDONYM_SALT at runtime.
+    // Manager (never a guessable path). The Lambda receives ONLY the secret
+    // id/arn as non-secret config — never the salt value itself, which would
+    // otherwise be recoverable via lambda:GetFunctionConfiguration.
+    // activityLogService fetches the value from Secrets Manager at runtime
+    // (outside the handler, cached per container) from
+    // WREN_ACTIVITY_PSEUDONYM_SALT_SECRET_ARN.
     const activityPseudonymSaltName = `${config.stackPrefix}/audit/pseudonym-salt`;
     const activityPseudonymSalt = config.auditPseudonymSaltOwnership === "external"
       ? secretsmanager.Secret.fromSecretNameV2(
@@ -166,7 +169,7 @@ export class ComputeStack extends Stack {
       activityPseudonymSalt.applyRemovalPolicy(RemovalPolicy.RETAIN);
     }
     const activitySaltEnv = {
-      WREN_ACTIVITY_PSEUDONYM_SALT: activityPseudonymSalt.secretValue.unsafeUnwrap(),
+      WREN_ACTIVITY_PSEUDONYM_SALT_SECRET_ARN: activityPseudonymSalt.secretArn,
     };
 
     // -----------------------------------------------------------------------
@@ -550,6 +553,12 @@ export class ComputeStack extends Stack {
     this.grantDatabaseAccess(this.documentFunction, secrets.wren_document);
     this.grantDatabaseAccess(this.adminFunction, secrets.wren_admin);
     this.grantDatabaseAccess(this.auditFunction, secrets.wren_audit);
+
+    // Activity-log pseudonym salt: read at runtime from Secrets Manager (never
+    // a plaintext env var). Only the Admin and Audit Lambdas derive actor
+    // pseudonyms, so only they get GetSecretValue on the salt secret.
+    activityPseudonymSalt.grantRead(this.adminFunction);
+    activityPseudonymSalt.grantRead(this.auditFunction);
     this.grantDatabaseAccess(this.feedbackOrchestratorFunction, secrets.wren_feedback_orch);
     this.grantDatabaseAccess(this.feedbackEngineFunction, secrets.wren_feedback_engine);
     this.grantDatabaseAccess(this.notificationFunction, secrets.wren_notification);

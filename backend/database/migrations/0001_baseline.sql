@@ -65,6 +65,19 @@ END;
 $$;
 
 
+--
+-- Name: reject_activity_event_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE OR REPLACE FUNCTION public.reject_activity_event_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'activity_event is append-only (id=%; operation=%).', OLD.id, TG_OP;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -1299,6 +1312,14 @@ CREATE TRIGGER resolution_status_history_append_only BEFORE UPDATE ON public.res
 
 
 --
+-- Name: activity_event activity_event_append_only; Type: TRIGGER; Schema: public; Owner: -
+--
+
+DROP TRIGGER IF EXISTS activity_event_append_only ON public.activity_event;
+CREATE TRIGGER activity_event_append_only BEFORE UPDATE OR DELETE ON public.activity_event FOR EACH ROW EXECUTE FUNCTION public.reject_activity_event_mutation();
+
+
+--
 -- Name: access_grant access_grant_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1861,13 +1882,17 @@ GRANT SELECT ON TABLE public.access_grant TO wren_document;
 GRANT SELECT ON TABLE public.custom_metadata_field TO wren_document;
 
 -- wren_admin
+REVOKE UPDATE, DELETE ON TABLE
+  public.activity_event
+  FROM wren_admin;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.department, public.document_type, public.document_type_config,
   public.error_category, public.content_type, public.custom_metadata_field,
   public.topic, public.reference_material, public.app_user, public.role_assignment,
   public.access_grant, public.usage_limit, public.usage_counter,
-  public.override, public.platform_usage_policy, public.activity_event,
-  public.aggregate_counter
+  public.override, public.platform_usage_policy, public.aggregate_counter
+  TO wren_admin;
+GRANT SELECT, INSERT ON TABLE public.activity_event
   TO wren_admin;
 GRANT SELECT ON TABLE
   public.document, public.draft, public.feedback_item, public.anchor,
