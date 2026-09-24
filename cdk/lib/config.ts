@@ -41,6 +41,16 @@ export const DEFAULT_PROJECT_NAME = "wren";
 export const DEFAULT_ENVIRONMENT_NAME = "dev";
 
 /**
+ * Default signup email-domain allowlist (secure-by-default remediation for
+ * finding f-2404a7b6). Self-registration is restricted to the institution's
+ * domain out of the box rather than being unrestricted. Matching is exact:
+ * subdomains (e.g. `law.ubc.ca`) are NOT implied and must be listed
+ * explicitly. Override at synth/deploy with
+ * `-c allowedEmailDomains=ubc.ca,law.ubc.ca`.
+ */
+export const DEFAULT_ALLOWED_EMAIL_DOMAINS: readonly string[] = ["ubc.ca"];
+
+/**
  * Single-source default for the Bedrock model identifier (REQ-NFR-MODEL-01).
  *
  * Model invocation is model-agnostic (via `langchain-aws`); this is only a
@@ -172,11 +182,12 @@ export interface AppConfig {
    */
   readonly customDomain?: string;
   /**
-   * Exact email hostnames allowed for new Cognito self-signups. Empty by
-   * default (unrestricted). Set with `-c allowedEmailDomains=ubc.ca`.
-   * Subdomains are not implied: `ubc.ca` does not allow `law.ubc.ca`.
-   * In `prod`, this must be non-empty. Matching is exact: subdomains
-   * must be listed separately.
+   * Exact email hostnames allowed for new Cognito self-signups. Defaults to
+   * {@link DEFAULT_ALLOWED_EMAIL_DOMAINS} (`ubc.ca`) so self-registration is
+   * restricted out of the box (secure-by-default). Override with
+   * `-c allowedEmailDomains=ubc.ca,law.ubc.ca`. This must be non-empty: an
+   * explicitly empty override fails the synth closed. Matching is exact —
+   * subdomains are not implied and must be listed separately.
    */
   readonly allowedEmailDomains: readonly string[];
   /**
@@ -268,7 +279,7 @@ function resolveCacheEnabledWorkloads(raw: string | undefined): CacheWorkload[] 
  *   - `cacheEnabledWorkloads` -> comma-separated workloads, defaults to none
  *   - `stackPrefix`     -> defaults to `${projectName}-${environmentName}`
  *   - `corsAllowedOrigins` -> extra exact CORS origins, comma-separated
- *   - `allowedEmailDomains` -> exact signup email hostnames, comma-separated
+ *   - `allowedEmailDomains` -> exact signup email hostnames, comma-separated; defaults to `ubc.ca`
  *
  * Override at synth/deploy time, e.g.:
  *   cdk synth -c appName="My Coach" -c environmentName=prod
@@ -294,13 +305,14 @@ export function resolveAppConfig(app: App): AppConfig {
   const stackPrefix = readContext(app, "stackPrefix") ?? `${projectName}-${environmentName}`;
   const lambdaConcurrency = resolveLambdaConcurrency((key) => readContext(app, key));
   const customDomain = readContext(app, "customDomain");
-  const allowedEmailDomains = parseAllowedEmailDomains(
-    readContext(app, "allowedEmailDomains"),
-    "allowedEmailDomains",
-  );
-  if (environmentName === "prod" && allowedEmailDomains.length === 0) {
+  const allowedEmailDomainsContext = readContext(app, "allowedEmailDomains");
+  const allowedEmailDomains =
+    allowedEmailDomainsContext === undefined
+      ? DEFAULT_ALLOWED_EMAIL_DOMAINS
+      : parseAllowedEmailDomains(allowedEmailDomainsContext, "allowedEmailDomains");
+  if (allowedEmailDomains.length === 0) {
     throw new Error(
-      "allowedEmailDomains must be non-empty in prod; use -c allowedEmailDomains=example.com",
+      "allowedEmailDomains must be non-empty; omit -c allowedEmailDomains to use the default (ubc.ca), or pass -c allowedEmailDomains=example.com",
     );
   }
   const corsAllowedOrigins = parseCorsAllowedOrigins(readContext(app, "corsAllowedOrigins"));
