@@ -175,6 +175,8 @@ export interface AppConfig {
    * Exact email hostnames allowed for new Cognito self-signups. Empty by
    * default (unrestricted). Set with `-c allowedEmailDomains=ubc.ca`.
    * Subdomains are not implied: `ubc.ca` does not allow `law.ubc.ca`.
+   * In `prod`, this must be non-empty. Matching is exact: subdomains
+   * must be listed separately.
    */
   readonly allowedEmailDomains: readonly string[];
   /**
@@ -296,6 +298,11 @@ export function resolveAppConfig(app: App): AppConfig {
     readContext(app, "allowedEmailDomains"),
     "allowedEmailDomains",
   );
+  if (environmentName === "prod" && allowedEmailDomains.length === 0) {
+    throw new Error(
+      "allowedEmailDomains must be non-empty in prod; use -c allowedEmailDomains=example.com",
+    );
+  }
   const corsAllowedOrigins = parseCorsAllowedOrigins(readContext(app, "corsAllowedOrigins"));
 
   // Data residency (REQ 46.x): persistent stores MUST live in ca-central-1.

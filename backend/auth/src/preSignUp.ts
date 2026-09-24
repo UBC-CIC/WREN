@@ -17,6 +17,9 @@ export function evaluatePreSignUp(
   allowedDomainsRaw: string | undefined,
 ): PreSignUpTriggerEvent {
   const allowed = parseAllowedEmailDomains(allowedDomainsRaw, 'ALLOWED_EMAIL_DOMAINS');
+  if (allowed.length === 0) {
+    throw new Error(SIGNUP_EMAIL_DOMAIN_DENIED);
+  }
   const email = event.request.userAttributes['email'] ?? event.userName;
   if (!isSignupEmailDomainAllowed(email, allowed)) {
     throw new Error(SIGNUP_EMAIL_DOMAIN_DENIED);

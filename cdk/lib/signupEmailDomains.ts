@@ -43,7 +43,7 @@ export function isSignupEmailDomainAllowed(
   email: string,
   allowedDomains: readonly string[],
 ): boolean {
-  if (allowedDomains.length === 0) return true;
+  if (allowedDomains.length === 0) return false;
   const host = emailHostname(email);
   if (host === undefined) return false;
   return allowedDomains.includes(host);
