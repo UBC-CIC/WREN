@@ -37,6 +37,10 @@
  */
 import { createHash } from 'crypto';
 
+import {
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from '@aws-sdk/client-secrets-manager';
 import { activityEventSchema, type ActivityEvent } from '@wren/types';
 
 import type { QueryExecutor } from './db';
@@ -84,12 +88,82 @@ function toActivityEvent(row: ActivityEventRow): ActivityEvent {
  * leaking `userId` structure (which is a bare UUID and would otherwise be
  * trivially distinguishable/guessable across a small user base).
  *
- * Deliberately read lazily (not at module load) so tests never need the
- * environment variable set, and production always fails closed if it is
- * missing rather than silently using a constant, guessable salt.
+ * The salt is NEVER read from a plaintext Lambda env var (which any principal
+ * with `lambda:GetFunctionConfiguration` could recover and use to re-identify
+ * every row). In deployed Lambdas it lives in Secrets Manager and is fetched
+ * at runtime — once per container, outside the request handler — via
+ * {@link ensurePseudonymSalt}. Production always fails closed if no salt is
+ * available rather than silently using a constant, guessable salt.
+ */
+
+/** Secrets Manager client, reused across warm invocations. */
+let secretsClient: SecretsManagerClient | undefined;
+
+/** Salt fetched from Secrets Manager; cached for the container's lifetime. */
+let resolvedSaltFromSecret: string | undefined;
+
+/** In-flight fetch, memoized so concurrent callers share a single API call. */
+let saltFetch: Promise<string> | undefined;
+
+/**
+ * Ensure the pseudonym salt is available, fetching it from Secrets Manager if
+ * necessary. Resolution order:
+ *
+ *   1. A salt already fetched from Secrets Manager this container (cached).
+ *   2. `WREN_ACTIVITY_PSEUDONYM_SALT` — a plaintext override used ONLY by
+ *      tests / local runs; never set in deployed Lambdas.
+ *   3. `WREN_ACTIVITY_PSEUDONYM_SALT_SECRET_ARN` — the Secrets Manager secret
+ *      id/arn supplied as non-secret config; its value is fetched at runtime
+ *      and cached, so it is never exposed via the function configuration.
+ *
+ * Fails closed when none is available. {@link recordActivityEvent} awaits this
+ * before deriving any pseudonym, so the synchronous {@link pseudonymSalt}
+ * accessor always finds a resolved salt in production.
+ */
+export async function ensurePseudonymSalt(): Promise<string> {
+  if (resolvedSaltFromSecret) return resolvedSaltFromSecret;
+
+  const plaintext = process.env.WREN_ACTIVITY_PSEUDONYM_SALT;
+  if (plaintext) return plaintext;
+
+  const secretId = process.env.WREN_ACTIVITY_PSEUDONYM_SALT_SECRET_ARN;
+  if (!secretId) {
+    throw new Error(
+      'Neither WREN_ACTIVITY_PSEUDONYM_SALT nor WREN_ACTIVITY_PSEUDONYM_SALT_SECRET_ARN is configured — cannot derive a stable actor pseudonym',
+    );
+  }
+
+  if (!saltFetch) {
+    saltFetch = (async () => {
+      secretsClient ??= new SecretsManagerClient({});
+      const response = await secretsClient.send(
+        new GetSecretValueCommand({ SecretId: secretId }),
+      );
+      if (!response.SecretString) {
+        throw new Error(
+          'WREN_ACTIVITY_PSEUDONYM_SALT_SECRET_ARN resolved to an empty or binary secret — cannot derive a stable actor pseudonym',
+        );
+      }
+      resolvedSaltFromSecret = response.SecretString;
+      return response.SecretString;
+    })().catch((err) => {
+      // Drop the memoized promise so a transient failure is retried on the
+      // next call rather than cached for the container's lifetime.
+      saltFetch = undefined;
+      throw err;
+    });
+  }
+  return saltFetch;
+}
+
+/**
+ * Synchronous salt accessor for {@link pseudonymForActor}. Returns the salt
+ * already resolved by {@link ensurePseudonymSalt} (from Secrets Manager) or a
+ * test/local plaintext env var. Fails closed when no salt is available.
  */
 function pseudonymSalt(): string {
-  const salt = process.env.WREN_ACTIVITY_PSEUDONYM_SALT;
+  const salt =
+    resolvedSaltFromSecret ?? process.env.WREN_ACTIVITY_PSEUDONYM_SALT;
   if (!salt) {
     throw new Error(
       'WREN_ACTIVITY_PSEUDONYM_SALT is not configured — cannot derive a stable actor pseudonym',
@@ -137,6 +211,9 @@ export async function recordActivityEvent(
   input: RecordActivityEventInput,
   db: QueryExecutor,
 ): Promise<ActivityEvent> {
+  // Resolve the salt (from Secrets Manager in production, cached per container)
+  // before deriving the pseudonym, so pseudonymForActor stays synchronous.
+  await ensurePseudonymSalt();
   const rows = await db.query<ActivityEventRow>(
     `INSERT INTO activity_event
        (actor_pseudonym, verb, object_type, object_ref, document_type_id, department_id, "timestamp", context)
