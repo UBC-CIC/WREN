@@ -28,10 +28,9 @@ function signupEvent(
 }
 
 describe('evaluatePreSignUp', () => {
-  it('returns the event unchanged when the allowlist is empty', () => {
+  it('rejects signup when the allowlist is empty', () => {
     const event = signupEvent('ada@example.com');
-    expect(evaluatePreSignUp(event, '')).toBe(event);
-    expect(evaluatePreSignUp(event, undefined)).toBe(event);
+    expect(() => evaluatePreSignUp(event, '')).toThrow(SIGNUP_EMAIL_DOMAIN_DENIED);
   });
 
   it('allows an exact hostname match', () => {
