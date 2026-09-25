@@ -2502,6 +2502,105 @@ def _remap_carried_forward_indices(
     return remapped
 
 
+_FEEDBACK_MESSAGE_FIELDS = ("jobId", "documentId", "draftId", "userId", "writingTypeId")
+
+
+def parse_feedback_message(raw_body: str) -> dict[str, str]:
+    """Validate an SQS message body against the expected feedback-job schema.
+
+    Rejects anything that is not a JSON object carrying the five required
+    string fields as well-formed UUIDs. This is a structural gate only —
+    authorization (ownership + id binding) is enforced separately by
+    validate_job_binding against the database. Raises ValueError on any
+    schema violation so the caller can drop the malformed message.
+    """
+    try:
+        body = json.loads(raw_body)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError(f"message body is not valid JSON: {exc}") from exc
+
+    if not isinstance(body, dict):
+        raise ValueError("message body must be a JSON object")
+
+    parsed: dict[str, str] = {}
+    for field in _FEEDBACK_MESSAGE_FIELDS:
+        value = body.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"missing or non-string field: {field}")
+        try:
+            # Reject non-UUID ids up front; every id in the contract is a uuid.
+            uuid.UUID(value)
+        except (ValueError, AttributeError) as exc:
+            raise ValueError(f"field {field} is not a valid UUID") from exc
+        parsed[field] = value
+
+    return parsed
+
+
+def validate_job_binding(
+    document_id: str,
+    draft_id: str,
+    user_id: str,
+    writing_type_id: str,
+    conn: psycopg.Connection,
+) -> None:
+    """Authorize a feedback job against the database before any read or write.
+
+    The SQS message fields are attacker-controllable by anyone holding
+    sqs:SendMessage on the feedback queue (or DLQ-redrive rights). Nothing in
+    the message binds the ids to each other or to the document owner, and the
+    generated jobId is not persisted anywhere — so it cannot be used as an
+    authoritative lookup key. This function re-derives the trust relationships
+    directly from the database, mirroring the ownership + draft↔document checks
+    the REST producer performs in handleRequestFeedback, and refuses to proceed
+    on any mismatch. It MUST run before load_draft_segments and before any of
+    the DELETE sinks in insert_feedback_items / _persist_carried_forward_items.
+
+    Raises NonRetryableFeedbackError on any binding violation (retrying an
+    ill-formed message never succeeds, so it is intentionally non-retryable).
+    """
+    with conn.cursor() as cur:
+        # 1) Document must exist, be owned by the claimed user, and carry the
+        #    claimed writing/document type. This binds document_id ↔ user_id
+        #    ↔ writing_type_id together.
+        cur.execute(
+            "SELECT owner_user_id, document_type_id FROM document WHERE id = %s",
+            (document_id,),
+        )
+        doc_row = cur.fetchone()
+        if doc_row is None:
+            raise NonRetryableFeedbackError(
+                f"Job rejected: document {document_id} not found"
+            )
+
+        owner_user_id, document_type_id = str(doc_row[0]), str(doc_row[1])
+        if owner_user_id != str(user_id):
+            raise NonRetryableFeedbackError(
+                "Job rejected: userId does not own the target document"
+            )
+        if document_type_id != str(writing_type_id):
+            raise NonRetryableFeedbackError(
+                "Job rejected: writingTypeId does not match the document type"
+            )
+
+        # 2) Draft must exist and belong to the same document. This binds
+        #    draft_id ↔ document_id, blocking the cross-tenant draft read and
+        #    the id-mismatched DELETE.
+        cur.execute(
+            "SELECT document_id FROM draft WHERE id = %s",
+            (draft_id,),
+        )
+        draft_row = cur.fetchone()
+        if draft_row is None:
+            raise NonRetryableFeedbackError(
+                f"Job rejected: draft {draft_id} not found"
+            )
+        if str(draft_row[0]) != str(document_id):
+            raise NonRetryableFeedbackError(
+                "Job rejected: draftId does not belong to the target document"
+            )
+
+
 def process_feedback_request(
     job_id: str,
     document_id: str,
@@ -2518,6 +2617,11 @@ def process_feedback_request(
     try:
         # Step 1: Get database connection
         conn = get_db_connection()
+
+        # Step 1b: Authorize the job BEFORE any draft read or destructive write.
+        # Re-derives ownership + draft↔document binding from the DB so a forged
+        # SQS message cannot read another user's draft or wipe unrelated rows.
+        validate_job_binding(document_id, draft_id, user_id, writing_type_id, conn)
 
         # Step 2: Load prompt config (includes category_priority filter)
         logger.info("Loading prompt config...")
@@ -2924,15 +3028,23 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # Process each SQS record
         for record in records:
+            # Structurally validate the message before trusting any field. A
+            # malformed body cannot be tied to a document/draft, so there is
+            # nothing safe to publish — drop it and move on.
             try:
-                # Parse SQS message body
-                body = json.loads(record['body'])
-                job_id = body['jobId']
-                document_id = body['documentId']
-                draft_id = body['draftId']
-                user_id = body['userId']
-                writing_type_id = body['writingTypeId']
+                message = parse_feedback_message(record.get('body', ''))
+            except ValueError as parse_error:
+                logger.error(f"Discarding malformed feedback message: {parse_error}")
+                failure_count += 1
+                continue
 
+            job_id = message['jobId']
+            document_id = message['documentId']
+            draft_id = message['draftId']
+            user_id = message['userId']
+            writing_type_id = message['writingTypeId']
+
+            try:
                 logger.info(f"Processing feedback job {job_id} for document {document_id}")
 
                 # Process the feedback request
