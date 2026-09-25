@@ -182,7 +182,7 @@ export class CloudFrontWafStack extends Stack {
       lifecycleRules: [
         {
           id: "ExpireCloudFrontAccessLogs",
-          expiration: Duration.days(90),
+          expiration: Duration.days(30),
           abortIncompleteMultipartUploadAfter: Duration.days(7),
         },
       ],

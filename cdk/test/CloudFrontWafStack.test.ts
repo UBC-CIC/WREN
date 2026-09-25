@@ -15,7 +15,7 @@ function synthCloudFront() {
 }
 
 describe("CloudFrontWafStack observability", () => {
-  it("enables distribution access logging to an S3 bucket that expires objects after 90 days", () => {
+  it("enables distribution access logging to an S3 bucket that expires objects after 30 days", () => {
     const { template } = synthCloudFront();
 
     template.hasResourceProperties("AWS::S3::Bucket", {
@@ -23,7 +23,7 @@ describe("CloudFrontWafStack observability", () => {
         Rules: Match.arrayWith([
           Match.objectLike({
             Status: "Enabled",
-            ExpirationInDays: 90,
+            ExpirationInDays: 30,
           }),
         ]),
       },
