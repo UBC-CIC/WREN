@@ -22,7 +22,7 @@
     "test:ci": "node scripts/check-app-name.mjs && node --experimental-vm-modules node_modules/jest/bin/jest.js --ci --silent"
   },
   "dependencies": {
-    "zod": "3.25.76"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/jest": "29.5.14",
